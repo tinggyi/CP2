@@ -11,7 +11,8 @@ dist/
 build/
 *.log
 .DS_Store
-
+*.json
+cp2-asag-d494351ad499.json
 # Large model / data directories  use Git LFS or keep out of repo
 sbert-finetuned/
 *.safetensors
