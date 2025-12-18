@@ -7,11 +7,25 @@ from google.cloud import vision
 from sentence_transformers import SentenceTransformer, util
 
 # --- 1. SETUP AND AUTHENTICATION ---
-# This remains the same, setting up your Google Cloud credentials.
-credential_path = r"D:\CP2_Project\cp2-asag-d494351ad499.json"
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
+# Load Google Cloud credentials from environment variable to avoid committing secrets
+# Set an environment variable named `GOOGLE_APPLICATION_CREDENTIALS` that points
+# to a local JSON key file (do NOT commit that file into the repo).
+credential_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+if credential_path:
+    if os.path.exists(credential_path):
+        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
+    else:
+        print(f"⚠️ GOOGLE_APPLICATION_CREDENTIALS is set to '{credential_path}', but file was not found.")
+        print("Please set the environment variable to a valid path on your machine.")
+else:
+    print("⚠️ GOOGLE_APPLICATION_CREDENTIALS not set. Set it to the path of your service-account JSON file.")
+
+# Initialize the Vision client (will use GOOGLE_APPLICATION_CREDENTIALS from env)
 client = vision.ImageAnnotatorClient()
-model = SentenceTransformer(r"D:\CP2_Project\sbert-finetuned")
+
+# Use a relative or environment-driven path for the sentence-transformer model
+model_dir = os.getenv("SBERT_MODEL_PATH", os.path.join(os.getcwd(), "sbert-finetuned"))
+model = SentenceTransformer(model_dir)
 
 # Load Mistral API key from environment or .env (do NOT hardcode secrets here)
 try:
