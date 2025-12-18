@@ -13,7 +13,18 @@ os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
 client = vision.ImageAnnotatorClient()
 model = SentenceTransformer(r"D:\CP2_Project\sbert-finetuned")
 
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "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")
+# Load Mistral API key from environment or .env (do NOT hardcode secrets here)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    # python-dotenv is optional; environment variables will still be read
+    pass
+
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+if not MISTRAL_API_KEY:
+    print("⚠️ Warning: MISTRAL_API_KEY not set. Set it in the environment or in a .env file.")
+
 MISTRAL_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # --- 2. CORE FUNCTIONS ---
