@@ -1,0 +1,18 @@
+﻿__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+venv/
+env/
+.env
+.vscode/
+*.egg-info/
+dist/
+build/
+*.log
+.DS_Store
+
+# Large model / data directories  use Git LFS or keep out of repo
+sbert-finetuned/
+*.safetensors
+model.safetensors
