@@ -4,7 +4,10 @@ import json
 import requests
 import fitz  # PyMuPDF library
 from google.cloud import vision
-from sentence_transformers import SentenceTransformer, util
+
+# Lazy-loaded SBERT model to avoid importing torch at module import time
+_sbert_model = None
+_sbert_model_dir = os.getenv("SBERT_MODEL_PATH", os.path.join(os.getcwd(), "sbert-finetuned"))
 
 # --- 1. SETUP AND AUTHENTICATION ---
 # Load Google Cloud credentials from environment variable to avoid committing secrets
@@ -20,12 +23,47 @@ if credential_path:
 else:
     print("⚠️ GOOGLE_APPLICATION_CREDENTIALS not set. Set it to the path of your service-account JSON file.")
 
-# Initialize the Vision client (will use GOOGLE_APPLICATION_CREDENTIALS from env)
-client = vision.ImageAnnotatorClient()
+# Lazily initialize the Vision client to avoid raising DefaultCredentialsError at import time
+vision_client = None
+
+def get_vision_client():
+    """Return a cached ImageAnnotatorClient or None if credentials are missing.
+    This avoids raising DefaultCredentialsError during import and provides clear
+    guidance to the user when credentials are not configured.
+    """
+    global vision_client
+    if vision_client is not None:
+        return vision_client
+    try:
+        vision_client = vision.ImageAnnotatorClient()
+        return vision_client
+    except Exception as e:
+        try:
+            from google.auth.exceptions import DefaultCredentialsError
+        except Exception:
+            DefaultCredentialsError = None
+
+        if DefaultCredentialsError and isinstance(e, DefaultCredentialsError):
+            print("⚠️ Google Cloud credentials not found. Set GOOGLE_APPLICATION_CREDENTIALS to the path of your JSON key, or run 'gcloud auth application-default login'.")
+            vision_client = None
+            return None
+        raise
 
 # Use a relative or environment-driven path for the sentence-transformer model
 model_dir = os.getenv("SBERT_MODEL_PATH", os.path.join(os.getcwd(), "sbert-finetuned"))
-model = SentenceTransformer(model_dir)
+model = None
+
+def get_model():
+    global model
+    if model is not None:
+        return model
+    try:
+        from sentence_transformers import SentenceTransformer
+    except Exception as e:
+        print("⚠️ Could not import 'sentence_transformers'. Install it with 'pip install sentence-transformers' and ensure torch is available.")
+        raise
+    model = SentenceTransformer(model_dir)
+    return model
 
 # Load Mistral API key from environment or .env (do NOT hardcode secrets here)
 try:
@@ -51,6 +89,11 @@ def ocr_pdf_to_text(pdf_path):
     if not os.path.exists(pdf_path):
         print(f"Error: File not found at '{pdf_path}'")
         return ""
+
+    # Ensure Vision client is available before making API calls
+    client = get_vision_client()
+    if client is None:
+        raise RuntimeError("Google Cloud Vision client could not be created: credentials are missing. Set GOOGLE_APPLICATION_CREDENTIALS or run 'gcloud auth application-default login'.")
 
     doc = fitz.open(pdf_path)
     full_text_from_pdf = ""
@@ -293,27 +336,35 @@ def compute_similarity_and_grade(ref_answer, stu_answer, max_marks=1):
 
     # --- START OF FIX: Ensure max_marks is a valid float ---
     try:
-        # Attempt to convert to float. This handles integers and valid number strings.
         max_marks = float(max_marks)
         if max_marks <= 0:
-            max_marks = 1.0 # Default to 1.0 if the marks are non-positive
+            max_marks = 1.0
     except (ValueError, TypeError):
-        # This catches cases where max_marks is None (the likely error cause)
-        # or a non-numeric string.
-        max_marks = 1.0 # Default to 1.0 mark
+        max_marks = 1.0
     # --- END OF FIX ---
 
-    embedding_ref = model.encode(ref_answer, convert_to_tensor=True)
-    embedding_student = model.encode(stu_answer, convert_to_tensor=True)
-    similarity_score = util.cos_sim(embedding_ref, embedding_student).item()
+    global _sbert_model, _sbert_model_dir
+    try:
+        # Import lazily to avoid torch import side-effects at module import time
+        from sentence_transformers import SentenceTransformer, util as st_util
 
-    # This line now safely multiplies floats:
+        if _sbert_model is None:
+            _sbert_model = SentenceTransformer(_sbert_model_dir)
+    except Exception as e:
+        # If model fails to import/load, log and return safe defaults
+        print(f"⚠️ Could not load SBERT model from '{_sbert_model_dir}': {e}")
+        return 0.0, 0.0
+
+    try:
+        embedding_ref = _sbert_model.encode(ref_answer, convert_to_tensor=True)
+        embedding_student = _sbert_model.encode(stu_answer, convert_to_tensor=True)
+        similarity_score = st_util.cos_sim(embedding_ref, embedding_student).item()
+    except Exception as e:
+        print(f"⚠️ Error computing embeddings/similarity: {e}")
+        return 0.0, 0.0
+
     raw_grade = similarity_score * max_marks
-
-    # Round to nearest 0.5
     rounded_grade = round(raw_grade * 2) / 2.0
-
-    # Ensure grade doesn't exceed max marks or go below 0
     rounded_grade = max(0, min(rounded_grade, max_marks))
     return similarity_score, rounded_grade
 
@@ -610,4 +661,3 @@ if __name__ == "__main__":
     student_answer_pdf_path = r"D:\CP2_Project\testestla.pdf"
 
     grade_exam_and_print_report(answer_key_pdf_path, student_answer_pdf_path)
-
