@@ -16,3 +16,5 @@ build/
 sbert-finetuned/
 *.safetensors
 model.safetensors
+
+cp2-asag-d494351ad499.json
