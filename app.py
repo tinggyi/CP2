@@ -333,7 +333,7 @@ def load_modules():
     """Load heavy modules only when first needed"""
     if not st.session_state.modules_loaded:
         import tempfile
-        from Captstone2_Project import (
+        from Capstone2_Project import (
             ocr_pdf_to_text,
             extract_questions_and_answers,
             compute_similarity_and_grade,
